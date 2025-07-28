@@ -85,7 +85,7 @@ export default function ProfilePage() {
       setUser(session.user)
 
       // Check if user is admin
-      const ADMIN_EMAILS = ['thaintd12@gmail.com']
+      const ADMIN_EMAILS = ['huynhgiabao050204@gmail.com']
       const isUserAdmin = ADMIN_EMAILS.includes(session.user.email || '')
       setIsAdmin(isUserAdmin)
 
