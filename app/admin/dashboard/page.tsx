@@ -11,6 +11,16 @@ import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend
+} from 'recharts'
+import {
   Users,
   DollarSign,
   Star,
@@ -86,10 +96,110 @@ export default function AdminDashboardPage() {
   const [currentPageUsers, setCurrentPageUsers] = useState(1)
   const [currentPageReviews, setCurrentPageReviews] = useState(1)
   const [currentPageTransactions, setCurrentPageTransactions] = useState(1)
+  const [weeklyTransactionData, setWeeklyTransactionData] = useState<any[]>([])
+  const [selectedWeek, setSelectedWeek] = useState(0) // 0: tuần hiện tại
+  const [weeksInMonth, setWeeksInMonth] = useState<{start: Date, end: Date, label: string}[]>([])
+  const [selectedMonth, setSelectedMonth] = useState(new Date()) // Tháng được chọn
   const pageSize = 10
 
   // Admin emails (có thể lấy từ env hoặc config)
   const ADMIN_EMAILS = ['thaintd12@gmail.com']
+
+  // Hàm lấy danh sách các tuần trong tháng hiện tại
+  const getWeeksInMonth = (date: Date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const weeks = []
+    let start = new Date(firstDay)
+    while (start <= lastDay) {
+      const end = new Date(start)
+      end.setDate(start.getDate() + 6 - start.getDay()) // Đến hết thứ 7
+      if (end > lastDay) end.setTime(lastDay.getTime())
+      weeks.push({
+        start: new Date(start),
+        end: new Date(end),
+        label: `${start.getDate().toString().padStart(2, '0')}/${(start.getMonth()+1).toString().padStart(2, '0')} - ${end.getDate().toString().padStart(2, '0')}/${(end.getMonth()+1).toString().padStart(2, '0')}`
+      })
+      start = new Date(end)
+      start.setDate(start.getDate() + 1)
+    }
+    return weeks
+  }
+
+  // Hàm tính toán dữ liệu giao dịch cho 1 tuần bất kỳ
+  const calculateTransactionDataForWeek = (transactions: any[], week: {start: Date, end: Date}) => {
+    const days: {date: string, amount: number, count: number}[] = []
+    let d = new Date(week.start)
+    d.setHours(0,0,0,0)
+    while (d <= week.end) {
+      const dayStr = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
+      const dayTransactions = transactions.filter(tx => {
+        const txDate = new Date(tx.created_at)
+        txDate.setHours(0,0,0,0)
+        return txDate.getTime() === d.getTime()
+      })
+      days.push({
+        date: dayStr,
+        amount: dayTransactions.reduce((sum, tx) => sum + (tx.amount || 0), 0),
+        count: dayTransactions.length
+      })
+      d = new Date(d)
+      d.setDate(d.getDate() + 1)
+    }
+    return days
+  }
+
+  // Hàm chuyển tháng
+  const changeMonth = (direction: 'prev' | 'next') => {
+    const newMonth = new Date(selectedMonth)
+    if (direction === 'prev') {
+      newMonth.setMonth(newMonth.getMonth() - 1)
+    } else {
+      newMonth.setMonth(newMonth.getMonth() + 1)
+    }
+    setSelectedMonth(newMonth)
+  }
+
+  // Hàm format tháng để hiển thị
+  const formatMonthYear = (date: Date) => {
+    return date.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })
+  }
+
+  useEffect(() => {
+    // Cập nhật danh sách tuần khi load trang
+    const now = new Date()
+    setWeeksInMonth(getWeeksInMonth(now))
+  }, [])
+
+  // Khi selectedMonth thay đổi, cập nhật danh sách tuần
+  useEffect(() => {
+    const weeks = getWeeksInMonth(selectedMonth)
+    setWeeksInMonth(weeks)
+    
+    // Tìm tuần có chứa ngày hiện tại
+    const today = new Date()
+    const currentWeekIndex = weeks.findIndex(week => {
+      const weekStart = new Date(week.start)
+      const weekEnd = new Date(week.end)
+      weekStart.setHours(0, 0, 0, 0)
+      weekEnd.setHours(23, 59, 59, 999)
+      return today >= weekStart && today <= weekEnd
+    })
+    
+    // Nếu tìm thấy tuần hiện tại trong tháng được chọn, chọn tuần đó
+    // Nếu không tìm thấy (tháng khác), chọn tuần đầu tiên
+    setSelectedWeek(currentWeekIndex >= 0 ? currentWeekIndex : 0)
+  }, [selectedMonth])
+
+  // Khi transactions hoặc selectedWeek thay đổi, cập nhật dữ liệu biểu đồ
+  useEffect(() => {
+    if (weeksInMonth.length && transactions.length) {
+      const week = weeksInMonth[selectedWeek] || weeksInMonth[0]
+      setWeeklyTransactionData(calculateTransactionDataForWeek(transactions, week))
+    }
+  }, [transactions, weeksInMonth, selectedWeek])
 
   useEffect(() => {
     checkAdminAccess()
@@ -171,6 +281,9 @@ export default function AdminDashboardPage() {
         .order('created_at', { ascending: false })
       if (!transactionsError && transactionsData) {
         setTransactions(transactionsData)
+        // Tính toán dữ liệu cho biểu đồ
+        const weeklyData = calculateWeeklyTransactionData(transactionsData)
+        setWeeklyTransactionData(weeklyData)
       }
       setLoadingTx(false)
 
@@ -220,6 +333,38 @@ export default function AdminDashboardPage() {
       hour: '2-digit',
       minute: '2-digit'
     }).format(new Date(dateString))
+  }
+
+  const calculateWeeklyTransactionData = (transactions: any[]) => {
+    const today = new Date()
+    const startOfWeek = new Date(today)
+    startOfWeek.setDate(today.getDate() - today.getDay()) // Bắt đầu từ Chủ nhật
+    startOfWeek.setHours(0, 0, 0, 0)
+
+    const weekDays = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
+    const weeklyData = weekDays.map((day, index) => {
+      const dayStart = new Date(startOfWeek)
+      dayStart.setDate(startOfWeek.getDate() + index)
+      const dayEnd = new Date(dayStart)
+      dayEnd.setDate(dayStart.getDate() + 1)
+
+      const dayTransactions = transactions.filter(tx => {
+        const txDate = new Date(tx.created_at)
+        return txDate >= dayStart && txDate < dayEnd
+      })
+
+      const totalAmount = dayTransactions.reduce((sum, tx) => sum + (tx.amount || 0), 0)
+      const transactionCount = dayTransactions.length
+
+      return {
+        day,
+        amount: totalAmount,
+        count: transactionCount,
+        date: dayStart.toLocaleDateString('vi-VN')
+      }
+    })
+
+    return weeklyData
   }
 
   const handleLogout = async () => {
@@ -335,6 +480,115 @@ export default function AdminDashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Weekly Transaction Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Giao dịch theo ngày trong tuần</CardTitle>
+            <CardDescription>
+              Biểu đồ thể hiện số lượng và tổng tiền giao dịch từng ngày trong tuần
+              <div className="mt-2 space-y-2">
+                {/* Month Selector */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => changeMonth('prev')}
+                  >
+                    ←
+                  </Button>
+                  <span className="font-medium min-w-[120px] text-center">
+                    {formatMonthYear(selectedMonth)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => changeMonth('next')}
+                  >
+                    →
+                  </Button>
+                  {selectedMonth.getMonth() !== new Date().getMonth() || selectedMonth.getFullYear() !== new Date().getFullYear() ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedMonth(new Date())}
+                    >
+                      Về tháng hiện tại
+                    </Button>
+                  ) : null}
+                </div>
+                {/* Week Selector */}
+                <div>
+                  <select
+                    className="border rounded px-2 py-1 text-sm bg-background"
+                    value={selectedWeek}
+                    onChange={e => setSelectedWeek(Number(e.target.value))}
+                  >
+                    {weeksInMonth.map((w, idx) => (
+                      <option value={idx} key={w.label}>
+                        Tuần {idx+1}: {w.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={weeklyTransactionData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12 }}
+                    height={60}
+                  />
+                  <YAxis 
+                    yAxisId="left"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `${value.toLocaleString('vi-VN')}đ`}
+                  />
+                  <YAxis 
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip 
+                    formatter={(value, name) => [
+                      name === 'Tổng tiền' 
+                        ? `${Number(value).toLocaleString('vi-VN')}đ` 
+                        : value,
+                      name === 'Tổng tiền' ? 'Tổng tiền' : 'Số giao dịch'
+                    ]}
+                    labelFormatter={(label) => `${label}`}
+                  />
+                  <Line 
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="amount" 
+                    stroke="#3b82f6" 
+                    strokeWidth={3}
+                    name="Tổng tiền"
+                    dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
+                  />
+                  <Line 
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="count" 
+                    stroke="#10b981" 
+                    strokeWidth={3}
+                    name="Số giao dịch"
+                    dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
+                  />
+                  <Legend />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Main Content Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
