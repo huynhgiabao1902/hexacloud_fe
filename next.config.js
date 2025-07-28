@@ -52,7 +52,8 @@ const nextConfig = {
 
     return config;
   },
-  serverExternalPackages: ['ssh2', 'cpu-features']
+  serverExternalPackages: ['ssh2', 'cpu-features'],
+  output: 'standalone'
 };
 
 module.exports = nextConfig;
