@@ -959,7 +959,7 @@ export default function VPSDashboard() {
 
             <div className="flex items-center space-x-4">
               {/* Payment Button */}
-              <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+              {/* <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200">
                     <CreditCard className="h-4 w-4 mr-2" />
@@ -978,7 +978,7 @@ export default function VPSDashboard() {
                     userEmail={user?.email}
                   />
                 </DialogContent>
-              </Dialog>
+              </Dialog> */}
 
               <Button variant="ghost" size="sm">
                 <Bell className="h-4 w-4" />

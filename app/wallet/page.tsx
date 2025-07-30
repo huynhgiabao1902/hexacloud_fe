@@ -328,7 +328,30 @@ export default function WalletPage() {
                   )}
                 </div>
               ) : (
-                <Button className="w-full" onClick={() => router.push('/pricing')}>Nâng cấp gói</Button>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-2xl font-bold">Gói miễn phí</div>
+                      <div className="text-base font-semibold text-muted-foreground">0đ/tháng</div>
+                    </div>
+                    <button
+                      className="text-xs underline ml-2"
+                      onClick={() => setExpanded((v) => !v)}
+                      aria-label={expanded ? 'Thu gọn' : 'Xem chi tiết'}
+                    >
+                      {expanded ? 'Thu gọn' : 'Xem chi tiết'}
+                    </button>
+                  </div>
+                  {expanded && (
+                    <div className="pt-2 space-y-1">
+                      <div>VPS: <span className="font-medium">1 VPS</span></div>
+                      <div>Mô tả: <span className="font-medium">Tính năng cơ bản</span></div>
+                    </div>
+                  )}
+                  <Button className="w-full mt-4" onClick={() => router.push('/pricing')}>
+                    Nâng cấp gói
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
