@@ -1,0 +1,27 @@
+Trong db có bảng user_vps có 1 số trường chính như
+ id uuid not null default gen_random_uuid (),
+  user_id uuid not null,
+  name character varying(100) not null,
+  host character varying(255) not null,
+  port integer null default 22,
+  username character varying(100) not null,
+  password_encrypted text null,
+  provider character varying(50) null default 'other'::character varying,
+  region character varying(50) null,
+  notes text null,
+  status character varying(20) null default 'pending'::character varying,
+  admin_verified boolean null default false,
+  admin_notes text null,
+  verification_attempts integer null default 0,
+  last_connection_test timestamp without time zone null,
+  cpu_usage numeric(5, 2) null default 0,
+  memory_usage numeric(5, 2) null default 0,
+  disk_usage numeric(5, 2) null default 0,
+  uptime_hours integer null default 0,
+  last_metrics_update timestamp without time zone null,
+  created_at timestamp without time zone null default CURRENT_TIMESTAMP,
+  updated_at timestamp without time zone null default CURRENT_TIMESTAMP,
+  constraint user_vps_pkey primary key (id),
+  constraint user_vps_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
+  
+  trong trang add-vps, khi nhấn test ssh connection thì hiện trạng thái là connect, khi nhấn add thì thêm vào database, khi test ssh connect thành công thì hiện ra terminal để có thể thao tác vài lệnh cở bản

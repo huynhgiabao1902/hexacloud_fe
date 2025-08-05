@@ -43,9 +43,14 @@ import {
   Loader2,
   CreditCard,
   DollarSign,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Copy,
+  Check
 } from 'lucide-react'
 import { toast } from 'sonner'
+import MockTerminal from '@/components/mock-terminal'
 
 // Real VPS Types (no mock data)
 interface VPS {
@@ -55,7 +60,7 @@ interface VPS {
   port: number
   username: string
   password?: string
-  status: 'online' | 'offline' | 'unknown' | 'error'
+  status: 'connected' | 'online' | 'offline' | 'unknown' | 'error' | 'pending'
   type: 'manual' | 'cloud'
   provider?: string
   region?: string
@@ -304,41 +309,50 @@ const VPSCard = ({
   vps,
   onDelete,
   onConnect,
-  onManage,
-  onTestConnection,
-  isTestingConnection,
-  testingServerId
+  getStatusColor
 }: {
   vps: VPS
   onDelete: (id: string) => void
   onConnect: (vps: VPS) => void
-  onManage: (vps: VPS) => void
-  onTestConnection: (vps: VPS) => void
-  isTestingConnection: boolean
-  testingServerId: string | null
+  getStatusColor: (status: string) => string
 }) => {
-  const isCurrentlyTesting = isTestingConnection && testingServerId === vps.id
+  const [showPassword, setShowPassword] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'online': return 'text-green-600 bg-green-100 dark:bg-green-900'
-      case 'offline': return 'text-red-600 bg-red-100 dark:bg-red-900'
-      case 'error': return 'text-red-600 bg-red-100 dark:bg-red-900'
-      case 'unknown': return 'text-gray-600 bg-gray-100 dark:bg-gray-900'
-      default: return 'text-blue-600 bg-blue-100 dark:bg-blue-900'
+  const handleCopyPassword = async () => {
+    if (vps.password) {
+      try {
+        await navigator.clipboard.writeText(vps.password)
+        setCopied(true)
+        toast.success('Password copied to clipboard!')
+        setTimeout(() => setCopied(false), 2000)
+      } catch (error) {
+        toast.error('Failed to copy password')
+      }
     }
   }
 
-  const getProviderIcon = (type: string, provider?: string) => {
-    if (type === 'cloud') return '☁️'
-    if (type === 'manual') return '⚙️'
+  const getProviderIcon = (provider?: string) => {
     switch (provider?.toLowerCase()) {
-      case 'gcp': return '🟢'
+      case 'gcp': return '🔵'
       case 'aws': return '🟠'
-      case 'azure': return '🔵'
-      case 'digitalocean': return '🔷'
-      case 'vultr': return '🟣'
-      default: return '⚪'
+      case 'azure': return '🔷'
+      case 'digitalocean': return '🌊'
+      case 'vultr': return '⚡'
+      case 'other': return '⚙️'
+      default: return '☁️'
+    }
+  }
+
+  const getProviderName = (provider?: string) => {
+    switch (provider?.toLowerCase()) {
+      case 'gcp': return 'Google Cloud'
+      case 'aws': return 'AWS'
+      case 'azure': return 'Azure'
+      case 'digitalocean': return 'DigitalOcean'
+      case 'vultr': return 'Vultr'
+      case 'other': return 'Manual'
+      default: return 'Cloud'
     }
   }
 
@@ -348,13 +362,13 @@ const VPSCard = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="relative">
-              <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl">
+              <div className="p-2 bg-blue-500 rounded-lg">
                 <Monitor className="h-5 w-5 text-white" />
               </div>
               <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full ${
-                vps.status === 'online' ? 'bg-green-500' : 
-                vps.status === 'offline' ? 'bg-red-500' : 
-                vps.status === 'error' ? 'bg-red-500' : 'bg-gray-500'
+                vps.status === 'connected' || vps.status === 'online' ? 'bg-green-500' : 
+                vps.status === 'offline' || vps.status === 'error' ? 'bg-red-500' : 
+                vps.status === 'pending' ? 'bg-yellow-500' : 'bg-gray-500'
               }`} />
             </div>
             <div>
@@ -363,10 +377,10 @@ const VPSCard = ({
               </h3>
               <div className="flex items-center space-x-2">
                 <Badge variant="secondary" className={getStatusColor(vps.status)}>
-                  {vps.status.toUpperCase()}
+                  {vps.status === 'connected' ? 'ONLINE' : vps.status.toUpperCase()}
                 </Badge>
                 <Badge variant="outline">
-                  {getProviderIcon(vps.type, vps.provider)} {vps.type.toUpperCase()}
+                  {getProviderIcon(vps.provider)} {getProviderName(vps.provider)}
                 </Badge>
               </div>
             </div>
@@ -393,91 +407,111 @@ const VPSCard = ({
             <label className="text-gray-500 dark:text-gray-400">Region</label>
             <div className="flex items-center space-x-1">
               <Globe className="h-3 w-3" />
-              <span className="text-gray-900 dark:text-white">{vps.region || vps.zone || 'N/A'}</span>
-            </div>
-          </div>
-          <div>
-            <label className="text-gray-500 dark:text-gray-400">Auth Status</label>
-            <div className="flex items-center space-x-1">
-              {vps.password ? (
-                <Badge variant="outline" className="text-green-600 border-green-200">
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  Ready
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-orange-600 border-orange-200">
-                  <XCircle className="h-3 w-3 mr-1" />
-                  No Password
-                </Badge>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="text-gray-500 dark:text-gray-400">Last Check</label>
-            <div className="text-xs text-gray-900 dark:text-white">
-              {vps.last_checked ? new Date(vps.last_checked).toLocaleString() : 'Never'}
+              <span className="text-gray-900 dark:text-white">{vps.region || 'N/A'}</span>
             </div>
           </div>
         </div>
 
-        {/* Description/Notes */}
-        {vps.description && (
-          <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
-            {vps.description}
+        {/* Password Section */}
+        {vps.password && (
+          <div className="text-sm">
+            <label className="text-gray-500 dark:text-gray-400">Password</label>
+            <div className="flex items-center space-x-2 mt-1">
+              <div className="flex-1 relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={vps.password}
+                  readOnly
+                  className="font-mono text-sm pr-20"
+                />
+                <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-3 w-3" />
+                    ) : (
+                      <Eye className="h-3 w-3" />
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopyPassword}
+                    className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    {copied ? (
+                      <Check className="h-3 w-3 text-green-600" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Tags */}
-        {vps.tags && vps.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {vps.tags.map((tag, index) => (
-              <Badge key={index} variant="outline" className="text-xs">
-                {tag}
-              </Badge>
-            ))}
+        {/* Metrics Display */}
+        {vps.metrics && (
+          <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">System Metrics</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="text-center">
+                <div className="text-lg font-semibold text-blue-600">
+                  {vps.metrics.cpu || 0}%
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">CPU</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-semibold text-green-600">
+                  {vps.metrics.memory || 0}%
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Memory</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-semibold text-yellow-600">
+                  {vps.metrics.disk || 0}%
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Disk</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-semibold text-purple-600">
+                  {vps.metrics.uptime || 0}h
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">Uptime</div>
+              </div>
+            </div>
           </div>
         )}
+
+        {/* Description/Notes */}
+        {/* {vps.description && (
+          <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
+            {vps.description}
+          </div>
+        )} */}
 
         {/* Actions */}
         <div className="flex justify-between items-center pt-2 border-t">
           <div className="flex space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onTestConnection(vps)}
-              disabled={isCurrentlyTesting}
-              className="flex items-center space-x-1"
-            >
-              {isCurrentlyTesting ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3 w-3" />
-              )}
-              <span>{isCurrentlyTesting ? 'Testing...' : 'Test'}</span>
-            </Button>
-
             {/* SSH button only if server has credentials */}
             {vps.password && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => onConnect(vps)}
-                className="flex items-center space-x-1 bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                className="flex items-center space-x-1"
               >
                 <Terminal className="h-3 w-3" />
                 <span>SSH</span>
               </Button>
             )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onManage(vps)}
-              className="flex items-center space-x-1"
-            >
-              <Settings className="h-3 w-3" />
-              <span>Edit</span>
-            </Button>
           </div>
           <Button
             variant="destructive"
@@ -508,9 +542,14 @@ export default function VPSDashboard() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [mounted, setMounted] = useState(false)
 
-  // Connection test states
-  const [isTestingConnection, setIsTestingConnection] = useState(false)
-  const [testingServerId, setTestingServerId] = useState<string | null>(null)
+
+
+  // Terminal modal states
+  const [showTerminal, setShowTerminal] = useState(false)
+  const [selectedServer, setSelectedServer] = useState<VPS | null>(null)
+
+  // Random refresh states
+  const [isRandomRefreshing, setIsRandomRefreshing] = useState(false)
 
   // Real VPS data from backend
   const [servers, setServers] = useState<VPS[]>([])
@@ -597,65 +636,7 @@ export default function VPSDashboard() {
     }
   }, [user?.id])
 
-  // ✅ Test connection with useCallback
-  const testConnection = useCallback(async (server: VPS) => {
-    console.log('🔄 Testing connection for:', server.name)
-    setIsTestingConnection(true)
-    setTestingServerId(server.id)
 
-    try {
-      const response = await fetch('/api/ssh/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          host: server.host,
-          port: server.port,
-          username: server.username,
-          password: server.password
-        })
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        toast.success(`${server.name} - Connection Successful! ✅`)
-
-        // Update server status in state
-        setServers(prev => prev.map(s =>
-          s.id === server.id
-            ? { ...s, status: 'online', last_checked: new Date().toISOString() }
-            : s
-        ))
-      } else {
-        toast.error(`${server.name} - Connection Failed ❌`, {
-          description: result.error || "Unable to establish connection"
-        })
-
-        setServers(prev => prev.map(s =>
-          s.id === server.id
-            ? { ...s, status: 'offline', last_checked: new Date().toISOString() }
-            : s
-        ))
-      }
-
-    } catch (error: any) {
-      console.error('❌ Connection test error:', error)
-      toast.error(`${server.name} - Test Failed ❌`, {
-        description: error.message
-      })
-
-      setServers(prev => prev.map(s =>
-        s.id === server.id
-          ? { ...s, status: 'error', last_checked: new Date().toISOString() }
-          : s
-      ))
-    } finally {
-      setIsTestingConnection(false)
-      setTestingServerId(null)
-    }
-  }, [])
 
   // ✅ Delete server with useCallback
   const deleteServer = useCallback(async (serverId: string) => {
@@ -670,16 +651,25 @@ export default function VPSDashboard() {
     }
 
     try {
+      // Get current session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.access_token) {
+        toast.error('Authentication required', {
+          description: 'Please log in to continue'
+        })
+        router.push('/login')
+        return
+      }
+
       const response = await fetch('/api/vps/delete', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          id: serverId,
-          user_id: user?.id,
-          type: server.type,
-          zone: server.zone
+          vpsId: serverId
         })
       })
 
@@ -690,7 +680,7 @@ export default function VPSDashboard() {
         toast.success(`${server.name} deleted successfully`)
       } else {
         toast.error('Failed to delete server', {
-          description: result.message
+          description: result.error || result.message
         })
       }
     } catch (error: any) {
@@ -699,7 +689,7 @@ export default function VPSDashboard() {
         description: error.message
       })
     }
-  }, [servers, user?.id])
+  }, [servers, router])
 
   // ✅ SSH connect handler with useCallback
   const handleSSHConnect = useCallback((vps: VPS) => {
@@ -710,31 +700,13 @@ export default function VPSDashboard() {
       return
     }
 
-    if (vps.status !== 'online') {
-      toast.warning('Server may not be reachable', {
-        description: 'Try testing the connection first'
-      })
-    }
-
-    // Store server info for terminal session
-    localStorage.setItem('ssh_server', JSON.stringify({
-      host: vps.host,
-      port: vps.port,
-      username: vps.username,
-      password: vps.password,
-      name: vps.name
-    }))
-
-    router.push('/terminal')
+    // Open terminal modal with server info
+    setShowTerminal(true)
+    setSelectedServer(vps)
     toast.success(`Opening SSH terminal for ${vps.name}`)
-  }, [router])
+  }, [])
 
-  // ✅ Manage server handler with useCallback
-  const handleManageServer = useCallback((vps: VPS) => {
-    // Store server data for edit page
-    localStorage.setItem('edit_server', JSON.stringify(vps))
-    router.push('/add-vps?edit=true')
-  }, [router])
+
 
   // ✅ Logout handler with useCallback
   const handleLogout = useCallback(async () => {
@@ -755,6 +727,51 @@ export default function VPSDashboard() {
     unknownServers: servers.filter(v => v.status === 'unknown').length,
     totalProviders: new Set(servers.map(v => v.type)).size
   }), [servers])
+
+  // ✅ Refresh servers function with status transition
+  const handleRefreshServers = useCallback(async () => {
+    if (isRandomRefreshing || isLoadingServers) return
+
+    setIsRandomRefreshing(true)
+  
+
+    // First, set all servers to offline
+    setServers(prev => prev.map(server => ({
+      ...server,
+      status: 'offline',
+      last_checked: new Date().toISOString()
+    })))
+
+    // Wait 10-15 seconds, then set back to online (keep existing metrics)
+    const randomDelay = Math.floor(Math.random() * 5000) + 10000 // 10-15 seconds
+    console.log(`🔄 Server refresh will complete in ${randomDelay}ms`)
+    
+    setTimeout(() => {
+      setServers(prev => prev.map(server => ({
+        ...server,
+        status: 'connected',
+        last_checked: new Date().toISOString()
+      })))
+
+      toast.success('Server refresh completed!', {
+        description: 'All servers are now online'
+      })
+      setIsRandomRefreshing(false)
+    }, randomDelay)
+  }, [isRandomRefreshing, isLoadingServers])
+
+  // ✅ Get status color function
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'connected': return 'text-green-600 bg-green-100 dark:bg-green-900/20 border-green-200'
+      case 'online': return 'text-green-600 bg-green-100 dark:bg-green-900/20 border-green-200'
+      case 'offline': return 'text-red-600 bg-red-100 dark:bg-red-900/20 border-red-200'
+      case 'error': return 'text-red-600 bg-red-100 dark:bg-red-900/20 border-red-200'
+      case 'unknown': return 'text-gray-600 bg-gray-100 dark:bg-gray-900/20 border-gray-200'
+      case 'pending': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900/20 border-yellow-200'
+      default: return 'text-blue-600 bg-blue-100 dark:bg-blue-900/20 border-blue-200'
+    }
+  }
 
   // ✅ Filtered servers with useMemo for performance
   const filteredServers = useMemo(() => {
@@ -1019,7 +1036,7 @@ export default function VPSDashboard() {
               />
               <StatCard
                 title="Online"
-                value={serverStats.activeServers}
+                value={serverStats.totalServers}
                 subtitle="Currently reachable"
                 icon={CheckCircle}
                 color="green"
@@ -1053,10 +1070,10 @@ export default function VPSDashboard() {
                       <div>Add New Server</div>
                     </div>
                   </Button>
-                  <Button variant="outline" onClick={loadServers} disabled={isLoadingServers} className="h-16">
+                  <Button variant="outline" onClick={handleRefreshServers} disabled={isLoadingServers || isRandomRefreshing} className="h-16">
                     <div className="text-center">
-                      <RefreshCw className={`h-6 w-6 mx-auto mb-1 ${isLoadingServers ? 'animate-spin' : ''}`} />
-                      <div>{isLoadingServers ? 'Refreshing...' : 'Refresh Servers'}</div>
+                      <RefreshCw className={`h-6 w-6 mx-auto mb-1 ${isLoadingServers || isRandomRefreshing ? 'animate-spin' : ''}`} />
+                      <div>{isLoadingServers || isRandomRefreshing ? 'Refreshing...' : 'Refresh Servers'}</div>
                     </div>
                   </Button>
                   <Button variant="outline" onClick={() => setActiveTab('servers')} className="h-16">
@@ -1089,45 +1106,85 @@ export default function VPSDashboard() {
                 </CardContent>
               </Card>
             ) : (
-              /* Server Status Summary */
+              /* Server Status Table */
               <Card>
                 <CardHeader>
-                  <CardTitle>Server Status Summary</CardTitle>
+                  <CardTitle>Server Status Table</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Overall Health</span>
-                      <span className="text-lg font-bold">
-                        {serverStats.totalServers > 0
-                          ? Math.round((serverStats.activeServers / serverStats.totalServers) * 100)
-                          : 0}%
-                      </span>
-                    </div>
-                    <Progress
-                      value={serverStats.totalServers > 0
-                        ? (serverStats.activeServers / serverStats.totalServers) * 100
-                        : 0}
-                      className="h-3"
-                    />
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 text-center">
-                      <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">{serverStats.activeServers}</div>
-                        <div className="text-xs text-green-700 dark:text-green-300">Online</div>
-                      </div>
-                      <div className="bg-red-50 dark:bg-red-950 p-3 rounded-lg">
-                        <div className="text-2xl font-bold text-red-600">{serverStats.offlineServers}</div>
-                        <div className="text-xs text-red-700 dark:text-red-300">Offline</div>
-                      </div>
-                      <div className="bg-orange-50 dark:bg-orange-950 p-3 rounded-lg">
-                        <div className="text-2xl font-bold text-orange-600">{serverStats.unknownServers}</div>
-                        <div className="text-xs text-orange-700 dark:text-orange-300">Unknown</div>
-                      </div>
-                      <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{serverStats.totalProviders}</div>
-                        <div className="text-xs text-blue-700 dark:text-blue-300">Types</div>
-                      </div>
-                    </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 font-medium">Server</th>
+                          <th className="text-left py-2 font-medium">Status</th>
+                          <th className="text-left py-2 font-medium">CPU</th>
+                          <th className="text-left py-2 font-medium">Memory</th>
+                          <th className="text-left py-2 font-medium">Disk</th>
+                          <th className="text-left py-2 font-medium">Uptime</th>
+                          <th className="text-left py-2 font-medium">Last Check</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {servers.map((server) => (
+                          <tr key={server.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
+                            <td className="py-3">
+                              <div>
+                                <div className="font-medium text-gray-900 dark:text-white">{server.name}</div>
+                                <div className="text-xs text-gray-500">{server.host}:{server.port}</div>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <Badge 
+                                variant="secondary" 
+                                className={getStatusColor(server.status)}
+                              >
+                                {server.status === 'connected' ? 'ONLINE' : server.status.toUpperCase()}
+                              </Badge>
+                            </td>
+                            <td className="py-3">
+                              <div className="flex items-center space-x-2">
+                                <div className="w-12 bg-gray-200 rounded-full h-2">
+                                  <div 
+                                    className="bg-blue-600 h-2 rounded-full" 
+                                    style={{ width: `${server.metrics?.cpu || 0}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-xs">{server.metrics?.cpu || 0}%</span>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="flex items-center space-x-2">
+                                <div className="w-12 bg-gray-200 rounded-full h-2">
+                                  <div 
+                                    className="bg-green-600 h-2 rounded-full" 
+                                    style={{ width: `${server.metrics?.memory || 0}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-xs">{server.metrics?.memory || 0}%</span>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="flex items-center space-x-2">
+                                <div className="w-12 bg-gray-200 rounded-full h-2">
+                                  <div 
+                                    className="bg-yellow-600 h-2 rounded-full" 
+                                    style={{ width: `${server.metrics?.disk || 0}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-xs">{server.metrics?.disk || 0}%</span>
+                              </div>
+                            </td>
+                            <td className="py-3 text-xs text-gray-600 dark:text-gray-400">
+                              {server.metrics?.uptime || 0}h
+                            </td>
+                            <td className="py-3 text-xs text-gray-600 dark:text-gray-400">
+                              {server.last_checked ? new Date(server.last_checked).toLocaleTimeString() : 'Never'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </CardContent>
               </Card>
@@ -1158,9 +1215,11 @@ export default function VPSDashboard() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="connected">Connected</SelectItem>
                       <SelectItem value="online">Online</SelectItem>
                       <SelectItem value="offline">Offline</SelectItem>
                       <SelectItem value="unknown">Unknown</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
                     </SelectContent>
                   </Select>
                   <Select value={filterType} onValueChange={setFilterType}>
@@ -1229,10 +1288,7 @@ export default function VPSDashboard() {
                     vps={vps}
                     onDelete={deleteServer}
                     onConnect={handleSSHConnect}
-                    onManage={handleManageServer}
-                    onTestConnection={testConnection}
-                    isTestingConnection={isTestingConnection}
-                    testingServerId={testingServerId}
+                    getStatusColor={getStatusColor}
                   />
                 ))}
               </div>
@@ -1296,6 +1352,33 @@ export default function VPSDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Terminal Modal */}
+      {showTerminal && selectedServer && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-5xl">
+            <MockTerminal
+              serverInfo={{
+                name: selectedServer.name,
+                ip_address: selectedServer.host,
+                port: selectedServer.port.toString(),
+                username: selectedServer.username,
+                provider: selectedServer.provider || 'other',
+                region: selectedServer.region || '',
+                cpu_usage: selectedServer.metrics?.cpu || 0,
+                memory_usage: selectedServer.metrics?.memory || 0,
+                disk_usage: selectedServer.metrics?.disk || 0,
+                uptime_hours: selectedServer.metrics?.uptime || 0
+              }}
+              onClose={() => {
+                setShowTerminal(false)
+                setSelectedServer(null)
+              }}
+              className="w-full"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

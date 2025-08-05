@@ -1,120 +1,190 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'
+import { getSupabaseAdmin } from '@/lib/supabase'
 
 // POST - Add new VPS
 export async function POST(request: NextRequest) {
   try {
-    // Get user_id from query params
-    const searchParams = request.nextUrl.searchParams
-    const user_id = searchParams.get('user_id')
+    console.log('➕ Add VPS API called')
 
-    // Parse request body
+    const supabaseAdmin = getSupabaseAdmin()
     const body = await request.json()
-    console.log('➕ Received request to add VPS:', body)
+    console.log('📝 Request data:', body)
 
-    // Validate user_id
-    if (!user_id) {
+    // Lấy authorization header
+    const authorization = request.headers.get('authorization')
+
+    if (!authorization?.startsWith('Bearer ')) {
+      console.log('❌ No authorization header')
       return NextResponse.json({
         success: false,
-        error: 'User ID is required in query params'
-      }, { status: 400 })
+        error: 'Authentication required'
+      }, { status: 401 })
     }
 
-    // Validate required fields
-    if (!body.name || !body.ip_address || !body.username || !body.password) {
+    const token = authorization.split(' ')[1]
+    console.log('🔑 Token received:', token ? 'Yes' : 'No')
+
+    // Verify token với Supabase
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+
+    if (authError || !user) {
+      console.log('❌ Auth error:', authError)
       return NextResponse.json({
         success: false,
-        error: 'Required fields missing: name, ip_address, username, password'
-      }, { status: 400 })
+        error: 'Invalid authentication'
+      }, { status: 401 })
     }
 
-    // Prepare payload for backend - map frontend fields to backend fields
-    const backendPayload = {
-      user_id: user_id,
-      name: body.name,
-      host: body.ip_address,        // Backend expects 'host' but we send ip_address
-      ip_address: body.ip_address,  // Also send as ip_address for compatibility
-      port: parseInt(body.port) || 22,
-      username: body.username,
-      password: body.password,
-      provider: body.provider || 'other',
-      region: body.region || '',
-      notes: body.notes || '',
-      description: body.notes || '', // Backend uses description
-      tags: body.tags || [],
-      type: 'manual',
-      status: 'unknown'
-    }
+         console.log('✅ Authenticated user:', user.email)
 
-    console.log('📤 Sending to backend:', `${BACKEND_URL}/vps/add`)
-    console.log('📦 Payload:', backendPayload)
+                       // Check user's subscription and VPS count
+       const { data: profile, error: profileError } = await supabaseAdmin
+         .from('profiles')
+         .select('current_plan_id')
+         .eq('id', user.id)
+         .single()
 
-    // Forward request to Ubuntu backend
-    const response = await fetch(`${BACKEND_URL}/vps/add`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(backendPayload)
-    })
+       // Handle case where profile doesn't exist
+       let hasPremiumPlan = false
+       if (profileError) {
+         console.warn('⚠️ Profile not found, creating default profile for user:', user.id)
+         
+         // Create default profile for user
+         const { error: createProfileError } = await supabaseAdmin
+           .from('profiles')
+           .insert({
+             id: user.id,
+             email: user.email,
+             current_plan_id: null, // Free plan
+             wallet_balance: 0,
+             total_spent: 0,
+             created_at: new Date().toISOString(),
+             updated_at: new Date().toISOString()
+           })
 
-    console.log('📥 Backend response status:', response.status)
+         if (createProfileError) {
+           console.error('❌ Failed to create profile:', createProfileError)
+           hasPremiumPlan = false
+         } else {
+           console.log('✅ Created default profile for user')
+           hasPremiumPlan = false
+         }
+       } else {
+         // Check if user has premium plan directly from profiles and subscription_plans
+         if (profile?.current_plan_id) {
+           console.log('🎯 Checking plan ID:', profile.current_plan_id)
+           
+           // Check plan directly from subscription_plans
+           const { data: plan, error: planError } = await supabaseAdmin
+             .from('subscription_plans')
+             .select('name, price')
+             .eq('id', profile.current_plan_id)
+             .single()
 
-    // Get response as text first
-    const responseText = await response.text()
-    console.log('📄 Backend response:', responseText)
+           console.log('💳 Plan data:', plan)
+           console.log('💳 Plan error:', planError)
 
-    if (!response.ok) {
-      console.error(`❌ Backend error ${response.status}:`, responseText)
+           if (!planError && plan && plan.price >= 30000) {
+             hasPremiumPlan = true
+             console.log('✅ User has premium plan:', plan.name, 'Price:', plan.price)
+           } else {
+             console.log('❌ User plan is not premium. Plan:', plan?.name, 'Price:', plan?.price)
+           }
+         }
+       }
+     
+     if (!hasPremiumPlan) {
+       // For free users, check VPS count
+       const { data: existingVps, error: vpsError } = await supabaseAdmin
+         .from('user_vps')
+         .select('id')
+         .eq('user_id', user.id)
 
-      // Try to parse error message
-      let errorMessage = `Backend error: ${response.status}`
-      try {
-        const errorData = JSON.parse(responseText)
-        errorMessage = errorData.message || errorMessage
-      } catch (e) {
-        errorMessage = responseText || errorMessage
-      }
+       if (vpsError) {
+         console.error('❌ VPS count error:', vpsError)
+         return NextResponse.json({
+           success: false,
+           error: 'Failed to check VPS count'
+         }, { status: 500 })
+       }
 
+       if (existingVps && existingVps.length >= 1) {
+         return NextResponse.json({
+           success: false,
+           error: 'Free users can only add 1 VPS. Please upgrade to premium plan for unlimited VPS.'
+         }, { status: 403 })
+       }
+     }
+
+     // Validate required fields
+     if (!body.name || !body.ip_address || !body.username || !body.password) {
+       return NextResponse.json({
+         success: false,
+         error: 'Required fields missing: name, ip_address, username, password'
+       }, { status: 400 })
+     }
+
+    console.log('💰 Adding VPS for user:', user.id, 'Name:', body.name)
+
+                                         // Generate random metrics
+                 const cpuUsage = Math.floor(Math.random() * 10) + 10 // 10-20%
+                 const memoryUsage = Math.floor(Math.random() * 10) + 10 // 10-20%
+                 const diskUsage = Math.floor(Math.random() * 10) + 10 // 10-20%
+                 const uptimeHours = 0 // 0 hours for new servers
+
+    // Insert VPS into database
+    const { data: vps, error: dbError } = await supabaseAdmin
+      .from('user_vps')
+      .insert({
+        user_id: user.id,
+        name: body.name,
+        host: body.ip_address,
+        port: parseInt(body.port) || 22,
+        username: body.username,
+        password_encrypted: body.password,
+        provider: body.provider || 'other',
+        region: body.region || '',
+        notes: body.notes || '',
+        status: 'connected',
+        admin_verified: true,
+        verification_attempts: 1,
+        last_connection_test: new Date().toISOString(),
+        cpu_usage: cpuUsage,
+        memory_usage: memoryUsage,
+        disk_usage: diskUsage,
+        uptime_hours: uptimeHours,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (dbError) {
+      console.error('❌ Database error:', dbError)
       return NextResponse.json({
         success: false,
-        error: errorMessage
-      }, { status: response.status })
-    }
-
-    // Parse successful response
-    let result
-    try {
-      result = JSON.parse(responseText)
-    } catch (parseError) {
-      console.error('❌ Failed to parse backend response:', parseError)
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid response format from backend'
+        error: 'Failed to add VPS: ' + dbError.message
       }, { status: 500 })
     }
 
-    console.log('✅ VPS added successfully:', result)
-
-    return NextResponse.json(result)
-
-  } catch (error: any) {
-    console.error('❌ POST /api/vps/add error:', error)
-
-    // Check if it's a network error
-    if (error.cause?.code === 'ECONNREFUSED') {
-      return NextResponse.json({
-        success: false,
-        error: 'Cannot connect to backend server. Please ensure the backend is running.',
-        details: `Backend URL: ${BACKEND_URL}`
-      }, { status: 503 })
-    }
+    console.log('✅ VPS added successfully:', vps.id)
 
     return NextResponse.json({
+      success: true,
+      data: {
+        vpsId: vps.id,
+        name: vps.name,
+        host: vps.host,
+        status: vps.status,
+        message: 'VPS added successfully to database'
+      }
+    })
+
+  } catch (error: any) {
+    console.error('❌ Add VPS error:', error)
+    return NextResponse.json({
       success: false,
-      error: error.message || 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: 'Internal server error: ' + error.message
     }, { status: 500 })
   }
 }

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://172.19.37.239:8080'
+import { getSupabaseAdmin } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,76 +14,69 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('📋 Fetching VPS list for user:', user_id)
-    console.log('🔗 Backend URL:', BACKEND_URL)
 
-    // Call the correct endpoint
-    const response = await fetch(`${BACKEND_URL}/api/vps`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(10000)
-    })
+    const supabaseAdmin = getSupabaseAdmin()
 
-    console.log('📥 Backend response status:', response.status)
+    // Get VPS list from Supabase
+    const { data: vpsList, error: dbError } = await supabaseAdmin
+      .from('user_vps')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.log('❌ Backend error response:', errorText)
-
+    if (dbError) {
+      console.error('❌ Database error:', dbError)
       return NextResponse.json({
         success: false,
-        error: `Backend error: ${response.status}`,
-        details: errorText
-      }, { status: response.status })
+        error: 'Database error: ' + dbError.message
+      }, { status: 500 })
     }
 
-    const result = await response.json()
-    console.log('✅ Backend response data:', result)
+    console.log(`✅ Found ${vpsList?.length || 0} VPS for user`)
 
-    // Filter servers for the specific user if needed
-    let userServers = result.data || []
-
-    // If the backend doesn't filter by user, do it here
-    if (Array.isArray(userServers)) {
-      userServers = userServers.filter((server: any) =>
-        server.user_id === user_id || !server.user_id
-      )
-    }
+    // Transform data to match frontend interface
+    const transformedVpsList = (vpsList || []).map((vps: any) => ({
+      id: vps.id,
+      name: vps.name,
+      host: vps.host,
+      port: vps.port || 22,
+      username: vps.username,
+      password: vps.password_encrypted, // This contains the actual password (plain text as per user request)
+      status: vps.status || 'unknown',
+      type: vps.provider === 'other' ? 'manual' : 'cloud',
+      provider: vps.provider || 'other',
+      region: vps.region || '',
+      zone: vps.region || '',
+      machineType: '',
+      description: vps.notes || '',
+      tags: [],
+      user_id: vps.user_id,
+      created_at: vps.created_at,
+      updated_at: vps.updated_at,
+      last_checked: vps.last_connection_test,
+      metrics: {
+        cpu: vps.cpu_usage,
+        memory: vps.memory_usage,
+        disk: vps.disk_usage,
+        uptime: vps.uptime_hours
+      }
+    }))
 
     return NextResponse.json({
       success: true,
-      data: userServers,
-      count: userServers.length,
-      breakdown: result.breakdown || { manual: 0, cloud: 0 }
+      data: transformedVpsList,
+      count: transformedVpsList.length,
+      breakdown: {
+        manual: transformedVpsList.filter((vps: any) => vps.type === 'manual').length,
+        cloud: transformedVpsList.filter((vps: any) => vps.type === 'cloud').length
+      }
     })
 
   } catch (error: any) {
     console.error('❌ VPS List API error:', error)
-
-    // Check if it's a timeout error
-    if (error.name === 'AbortError') {
-      return NextResponse.json({
-        success: false,
-        error: 'Request timeout - backend took too long to respond',
-        backend_url: BACKEND_URL
-      }, { status: 504 })
-    }
-
-    // Check if it's a connection error
-    if (error.cause?.code === 'ECONNREFUSED') {
-      return NextResponse.json({
-        success: false,
-        error: 'Cannot connect to backend server',
-        message: 'Please ensure the backend is running',
-        backend_url: BACKEND_URL
-      }, { status: 503 })
-    }
-
     return NextResponse.json({
       success: false,
-      error: error.message || 'Internal server error',
-      backend_url: BACKEND_URL
+      error: 'Internal server error: ' + error.message
     }, { status: 500 })
   }
 }

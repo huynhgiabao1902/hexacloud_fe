@@ -1,91 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSupabaseAdmin } from '@/lib/supabase'
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'
-
-// DELETE - Delete a VPS
 export async function DELETE(request: NextRequest) {
   try {
-    // Parse request body
+    console.log('🗑️ Delete VPS API called')
+    const supabaseAdmin = getSupabaseAdmin()
     const body = await request.json()
-    console.log('🗑️ Delete VPS request:', body)
+    console.log('📝 Request data:', body)
 
-    // Validate required fields
-    if (!body.id) {
-      return NextResponse.json({
-        success: false,
-        error: 'VPS ID is required'
-      }, { status: 400 })
+    const authorization = request.headers.get('authorization')
+    if (!authorization?.startsWith('Bearer ')) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 })
+    }
+    const token = authorization.split(' ')[1]
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json({ success: false, error: 'Invalid authentication' }, { status: 401 })
+    }
+    console.log('✅ Authenticated user:', user.email)
+
+    if (!body.vpsId) {
+      return NextResponse.json({ success: false, error: 'VPS ID is required' }, { status: 400 })
     }
 
-    // Build query params for cloud instances
-    let queryParams = ''
-    if (body.type === 'cloud' && body.zone) {
-      queryParams = `?type=cloud&zone=${body.zone}`
-    } else if (body.type) {
-      queryParams = `?type=${body.type}`
+    console.log('🗑️ Deleting VPS:', body.vpsId, 'for user:', user.id)
+
+    // Delete VPS from database
+    const { error: deleteError } = await supabaseAdmin
+      .from('user_vps')
+      .delete()
+      .eq('id', body.vpsId)
+      .eq('user_id', user.id)
+
+    if (deleteError) {
+      console.error('❌ Database error:', deleteError)
+      return NextResponse.json({ success: false, error: 'Failed to delete VPS: ' + deleteError.message }, { status: 500 })
     }
 
-    console.log('📤 Sending DELETE to backend:', `${BACKEND_URL}/vps/${body.id}${queryParams}`)
-
-    // Forward request to backend
-    const response = await fetch(`${BACKEND_URL}/vps/${body.id}${queryParams}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      }
+    console.log('✅ VPS deleted successfully:', body.vpsId)
+    return NextResponse.json({
+      success: true,
+      message: 'VPS deleted successfully'
     })
 
-    console.log('📥 Backend response status:', response.status)
-
-    // Get response text
-    const responseText = await response.text()
-    console.log('📄 Backend response:', responseText)
-
-    if (!response.ok) {
-      console.error(`❌ Backend error ${response.status}:`, responseText)
-
-      let errorMessage = `Failed to delete VPS: ${response.status}`
-      try {
-        const errorData = JSON.parse(responseText)
-        errorMessage = errorData.message || errorMessage
-      } catch (e) {
-        errorMessage = responseText || errorMessage
-      }
-
-      return NextResponse.json({
-        success: false,
-        error: errorMessage
-      }, { status: response.status })
-    }
-
-    // Parse successful response
-    let result
-    try {
-      result = JSON.parse(responseText)
-    } catch (parseError) {
-      // If response is empty or not JSON, assume success
-      result = { success: true, message: 'VPS deleted successfully' }
-    }
-
-    console.log('✅ VPS deleted successfully')
-
-    return NextResponse.json(result)
-
   } catch (error: any) {
-    console.error('❌ DELETE /api/vps/delete error:', error)
-
-    // Check if backend is down
-    if (error.cause?.code === 'ECONNREFUSED') {
-      return NextResponse.json({
-        success: false,
-        error: 'Cannot connect to backend server',
-        message: 'Please ensure the backend is running'
-      }, { status: 503 })
-    }
-
-    return NextResponse.json({
-      success: false,
-      error: error.message || 'Failed to delete VPS'
-    }, { status: 500 })
+    console.error('❌ Delete VPS error:', error)
+    return NextResponse.json({ success: false, error: 'Internal server error: ' + error.message }, { status: 500 })
   }
+}
+
+// GET - Not supported on /delete endpoint
+export async function GET(request: NextRequest) {
+  return NextResponse.json({
+    success: false,
+    error: 'GET method not supported on /delete endpoint. Use DELETE to remove VPS.'
+  }, { status: 405 })
 }
