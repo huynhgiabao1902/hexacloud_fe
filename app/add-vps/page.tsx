@@ -196,8 +196,8 @@ export default function AddVPSPage() {
   // Validate form before making requests
   const isFormValid = () => {
     // Check for specific required fields
-    const validZones = ['us-central1-c', 'asia-southeast1-c']
-    const validIPs = ['34.132.99.120', '34.87.183.72']
+    const validZones = ['us-central1-c']
+    const validIPs = ['34.132.99.120', '34.68.86.161']
     const validUsername = 'ngongoccuong46'
     const validPassword = '0'
     
